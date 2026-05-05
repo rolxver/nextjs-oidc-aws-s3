@@ -6,26 +6,31 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { fromWebToken } from "@aws-sdk/credential-providers";
+import { getVercelOidcToken } from "@vercel/functions/oidc";
 
 export const runtime = "nodejs";
 
-// On Vercel, VERCEL_OIDC_TOKEN is injected at runtime (OIDC Federation = ON).
-// Exchange it for temporary AWS creds via sts:AssumeRoleWithWebIdentity.
-// Locally, fall back to the default credential chain (~/.aws, env vars).
-function makeS3Client() {
+// On Vercel, getVercelOidcToken() returns a fresh OIDC JWT per request.
+// We exchange it for temporary AWS creds via sts:AssumeRoleWithWebIdentity.
+// Locally (no Vercel runtime) it throws, so we fall back to the default chain.
+async function makeS3Client() {
   const region = process.env.AWS_REGION;
   const roleArn = process.env.AWS_ROLE_ARN;
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
 
-  if (roleArn && oidcToken) {
-    return new S3Client({
-      region,
-      credentials: fromWebToken({
-        roleArn,
-        webIdentityToken: oidcToken,
-        roleSessionName: "vercel-nextjs-oidc-aws-s3",
-      }),
-    });
+  if (roleArn) {
+    try {
+      const token = await getVercelOidcToken();
+      return new S3Client({
+        region,
+        credentials: fromWebToken({
+          roleArn,
+          webIdentityToken: token,
+          roleSessionName: "vercel-nextjs-oidc-aws-s3",
+        }),
+      });
+    } catch {
+      // not running on Vercel (local dev) — fall through
+    }
   }
   return new S3Client({ region });
 }
@@ -43,7 +48,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const s3 = makeS3Client();
+    const s3 = await makeS3Client();
     const command =
       op === "put"
         ? new PutObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key })
