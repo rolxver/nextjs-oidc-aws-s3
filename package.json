@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.0",
+    "@aws-sdk/credential-providers": "^3.658.0",
     "@aws-sdk/s3-request-presigner": "^3.658.0",
     "next": "^16.2.4",
     "react": "^19.2.5",
