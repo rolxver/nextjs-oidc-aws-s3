@@ -9,28 +9,36 @@ export default function Home() {
 
   const append = (m: string) => setLog((l) => l + m + "\n");
 
+  async function getSignedUrl(op: "put" | "get") {
+    const res = await fetch(
+      `/api/s3-url?op=${op}&key=${encodeURIComponent(key)}`
+    );
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.url) {
+      throw new Error(
+        `sign ${op} failed: HTTP ${res.status} ${JSON.stringify(body)}`
+      );
+    }
+    return body.url as string;
+  }
+
   async function uploadAndDownload() {
     setLog("");
     try {
-      // 1. Get a pre-signed PUT URL
-      const putRes = await fetch(
-        `/api/s3-url?op=put&key=${encodeURIComponent(key)}`
-      ).then((r) => r.json());
-      append(`PUT URL: ${putRes.url.slice(0, 80)}...`);
+      const putUrl = await getSignedUrl("put");
+      append(`PUT URL: ${putUrl.slice(0, 80)}...`);
 
-      // 2. Upload directly to S3
-      const up = await fetch(putRes.url, { method: "PUT", body: content });
+      const up = await fetch(putUrl, { method: "PUT", body: content });
       append(`Upload status: ${up.status}`);
+      if (!up.ok) throw new Error(`upload failed: ${await up.text()}`);
 
-      // 3. Get a pre-signed GET URL
-      const getRes = await fetch(
-        `/api/s3-url?op=get&key=${encodeURIComponent(key)}`
-      ).then((r) => r.json());
-      append(`GET URL: ${getRes.url.slice(0, 80)}...`);
+      const getUrl = await getSignedUrl("get");
+      append(`GET URL: ${getUrl.slice(0, 80)}...`);
 
-      // 4. Download it back
-      const dl = await fetch(getRes.url).then((r) => r.text());
-      append(`Downloaded body: ${dl}`);
+      const dl = await fetch(getUrl);
+      const text = await dl.text();
+      append(`Download status: ${dl.status}`);
+      append(`Downloaded body: ${text}`);
     } catch (e: any) {
       append(`ERROR: ${e.message}`);
     }
